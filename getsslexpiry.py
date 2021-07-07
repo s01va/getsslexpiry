@@ -11,43 +11,26 @@ import sys, os, csv, datetime
 from pytz import timezone
 import pymysql
 import subprocess
+import configparser
 
 ###############################################
 
+config = configparser.Configparser()
+config.read('config.ini')
+
 # 만료일 n일 전부터 알림
-MMSDATE = 30
+MMSDATE = config['Alarm']['DATE']
 
 # 문자 발송 지정 시간
-MMSTIME = [9, 15]
+MMSTIME = config['Alarm']['HOURS'].split(',')
 
-KAKAO_RECIPIENTS = [
-	"01012345678",
-	"01012345678",
-	"01012345678"
-]
+# 통보관리시스템에서 통보그룹명 LIST에 추가
+NOTI_GROUPNAME = []
 
 DATENOW = datetime.datetime.now(timezone("Asia/Seoul"))
 
 # getsslexpiry.py 위치
 PATH_GETSSL_HOME = "/home/zabbix/getssl/"
-
-# URL 수집 DB
-mysql_tobit = {
-	"host":"",
-	"port":0000,
-	"user":"",
-	"password":"",
-	"database":""
-}
-
-# SMS 통보 DB
-mysql_sms = {
-	"host":"",
-	"port":0000,
-	"user":"",
-	"password":"",
-	"database":""
-}
 
 ###########################################################
 
@@ -69,11 +52,11 @@ def get_url():
 		"""
 	try:
 		conn = pymysql.connect(
-				host = mysql_tobit["host"],
-				port = mysql_tobit["port"],
-				user = mysql_tobit["user"],
-				password = mysql_tobit["password"],
-				database = mysql_tobit["database"]
+				host = config['mysql_tobit']['host'],
+				port = config['mysql_tobit']['port'],
+				user = config['mysql_tobit']['user'],
+				password = config['mysql_tobit']['password'],
+				database = config['mysql_tobit']['database']
 			)
 		cur = conn.cursor()
 		cur.execute(SQL_selecturl)
@@ -157,6 +140,32 @@ def get_sslexpiry(originurl):
 	return [url, port, expdate]
 	# return form: [url, port, expdate] or [url, port, "Exception"]
 
+def get_receiver(notigroupname):
+	SQL_selectmobile = """
+		SELECT ~
+		FROM ~
+		WHERE ~
+	"""
+
+	try:
+		conn = pymysql.connect (
+				host = config['mysql_tobit']['host'],
+				port = config['mysql_tobit']['port'],
+				user = config['mysql_tobit']['user'],
+				password = config['mysql_tobit']['password'],
+				database = config['mysql_tobit']['database']
+			)
+		cur = conn.cursor()
+		cur.execute(SQL_selectmobile)
+		result = [item[0] for item in cur.fetchall()]
+		cur.close()
+		conn.close()
+	except Exception as e:
+		write_errormessage(e)
+		result = ["Error"]
+
+	return result
+
 
 # 통보 DB에 insert == 카톡 통보 완료
 def insert_sms(content, phonenum):
@@ -169,11 +178,11 @@ def insert_sms(content, phonenum):
 	
 	try:
 		conn = pymysql.connect(
-			host = mysql_sms["host"],
-			port = mysql_sms["port"],
-			user = mysql_sms["user"],
-			password = mysql_sms["password"],
-			database = mysql_sms["database"]
+			host = config['mysql_sms']['host'],
+			port = config['mysql_sms']['port'],
+			user = config['mysql_sms']['user'],
+			password = config['mysql_sms']['password'],
+			database = config['mysql_sms']['database']
 		)
 		cur = conn.cursor()
 		cur.execute(SQL_emtrankko)
@@ -256,15 +265,23 @@ def main():
 		dt_mtime = datetime.datetime.fromtimestamp(mtime)
 		if dt_mtime.hour in MMSTIME:
 			fsendMMS_w = open(path_sendMMS_log, 'w')
+			message_content = ""
+			sendOK = True
+
 			for line in fexpiredate_reader:
 				if not line or line[0] == "OK":
+					sendOK = False
 					break
 				else:
-					message_content = line[0] + " " + line[1] + "\nSSL 인증서 만료 " + line[2] + " 남음\n"
-					for member in KAKAO_RECIPIENTS:
-						insert_sms(message_content, str(member))
-					fsendMMS_w.write(message_content)
-					print(message_content)
+					message_line = line[0] + " " + line[1] + "\n  SSL 인증서 만료 " + line[2] + " 남음\n"
+					fsendMMS_w.write(message_line)
+					message_content += message_line
+					#print(message_content)
+			
+			if sendOK = True:
+				for member in KAKAO_RECIPIENTS:
+					insert_sms(message_content, str(member))
+					
 			fsendMMS_w.close()
 
 	
